@@ -1,0 +1,116 @@
+# AG-DBA Configuration
+# Paper: "Attention-Guided Dynamic Bit Allocation for Long-Context LLM KV Caches"
+# Section 4.4: Hyperparameter Configuration
+
+# ============================================================================
+# Model & Hardware (Section 4.1)
+# ============================================================================
+model:
+  name: "llama-3.1-8b-instruct"
+  hf_model_id: "meta-llama/Llama-2-7b-hf"  # placeholder; use correct ID in practice
+  context_length: 128000
+  hidden_dim: 4096
+  num_attention_heads: 32
+  num_key_value_heads: 8  # For GQA (Section 2.1)
+
+hardware:
+  device: "cuda:0"
+  dtype: "float16"  # FP16 baseline per paper (Section 4.3)
+  cuda_version: "13.2"
+
+# ============================================================================
+# AG-DBA Algorithm Parameters (Section 3.2-3.4)
+# ============================================================================
+ag_dba:
+  # Isotropic rotation (Section 3.1, Eq. 1)
+  use_rotation: true
+  rotation_dtype: "float32"  # High precision for Beta distribution
+  
+  # Attention-guided importance scoring (Section 3.2, Eq. 4)
+  attention_decay_alpha: 0.85  # EMA parameter α ∈ [0,1) - paper-specified
+  head_importance_weighting: "uniform"  # or "learned" in future work
+  
+  # Dynamic bit allocation (Section 3.3, Eq. 5)
+  bit_widths: [1, 2, 3, 4]  # B_set = {1,2,3,4}
+  target_bits_per_param: 1.5  # Primary: 1.5 bpp; Secondary: 2.0 bpp
+  target_bits_per_param_secondary: 2.0
+  
+  # Water-filling algorithm (Section 3.4, Algorithm 1)
+  reallocation_interval: 512  # Update bit allocation every L=512 tokens (Section 4.4)
+  priority_queue_type: "heapq"  # Python standard library
+  
+  # Quantizer type (continuous Lloyd-Max, Section 3.1 & 3.4)
+  quantizer_type: "lloyd_max_continuous"
+  
+  # MSE distortion bounds (Section 3.1, Eq. 3)
+  use_precomputed_distortion: true
+  min_mse_coefficient: 0.8862  # sqrt(3*pi/2) / 4^b approximation for b=1
+
+# ============================================================================
+# Evaluation & Benchmarks (Section 4.2)
+# ============================================================================
+eval:
+  # Needle-In-A-Haystack (NIAH)
+  niah:
+    context_lengths: [4000, 16000, 32000, 64000, 100000, 104000]
+    depth_percentiles: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    metric: "recall"  # Binary hit/miss (Section 4.5)
+    
+  # LongBench-E: 6 domains (Section 4.2, Table 2)
+  longbench_e:
+    tasks: ["single_qa", "multi_qa", "summarization", "few_shot", "synthetic", "code"]
+    context_len_range: [10000, 30000]
+    metrics:
+      single_qa: "f1"
+      multi_qa: "f1"
+      summarization: "rouge"
+      few_shot: "em"
+      synthetic: "em"
+      code: "em"
+    
+  # Baselines (Section 4.3)
+  baselines:
+    - name: "fp16_baseline"
+      type: "uncompressed"
+      bits_per_param: 16.0
+    - name: "snapkv"
+      type: "token_eviction"
+      budget_fraction: 0.25  # Retain ~25% of sequence (≈4 bpp)
+    - name: "kivi"
+      type: "scalar_quantization"
+      bits_per_param: 2.0
+    - name: "turboquant"
+      type: "static_vector_quantization"
+      bits_per_param: 2.0
+      
+# ============================================================================
+# Training & Inference (Section 4.1)
+# ============================================================================
+training:
+  # Not applicable for post-training quantization (PTQ)
+  # AG-DBA is a pure inference-time method (Sections 3.1-3.4)
+  pass
+
+inference:
+  batch_size: 1
+  prefill_phase: true  # Run allocation algorithm during prefill (Section 3.4)
+  decode_phase: true   # Update asynchronously during decode
+  max_sequence_length: 128000
+
+# ============================================================================
+# Reproducibility (Paper: Section 4.1)
+# ============================================================================
+reproducibility:
+  seed: 42
+  deterministic: true
+  benchmark_backend: "torch.backends.cudnn.deterministic"
+
+# ============================================================================
+# Output & Logging
+# ============================================================================
+output:
+  save_dir: "./results"
+  save_compressed_cache: false  # Memory-intensive; disable for large-scale eval
+  log_level: "INFO"
+  log_bit_allocation_heatmap: true  # Figure 2 from paper
+  compute_vram_metrics: true  # Figure 4 from paper

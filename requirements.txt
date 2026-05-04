@@ -31,3 +31,7 @@ pytest-cov>=5.0.0
 
 # Utilities
 tqdm>=4.66.0
+click>=8.1.0
+
+# Type hints
+typing-extensions>=4.8.0

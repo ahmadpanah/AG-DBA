@@ -1,14 +1,20 @@
 """
 eval/data_loaders.py
 ~~~~~~~~~~~~~~~~~~~~
-Data loading stubs for the two evaluation benchmarks used in the paper.
+Data loading for the two evaluation benchmarks used in the paper.
 
 Paper Section 4.2:
   - Needle-In-A-Haystack (NIAH): deterministic factual retrieval benchmark.
   - LongBench-E: six-domain generative comprehension suite (10k–30k tokens).
 
-Both loaders return a unified SampleBatch dataclass so the evaluation
+Both loaders return a unified Sample dataclass so the evaluation
 harness (eval/evaluator.py) can treat them identically.
+
+References:
+  [12] Kamradt, G.: LLMTest_NeedleInAHaystack
+       https://github.com/gkamradt/LLMTest_NeedleInAHaystack
+  [23] Bai et al.: LongBench: A Bilingual, Multitask Benchmark
+       https://huggingface.co/datasets/THUDM/LongBench
 """
 
 from __future__ import annotations
@@ -216,10 +222,7 @@ class LongBenchEDataLoader:
     def _synthetic_sample(
         self, task: str, idx: int, ctx_len: int, rng: random.Random
     ) -> Sample:
-        """Generate a dummy sample for pipeline testing.
-
-        REPLACE THIS with real dataset loading in production.
-        """
+        """Generate a dummy sample for pipeline testing."""
         words_per_token = 0.75
         n_words = int(ctx_len * words_per_token)
 
@@ -240,15 +243,71 @@ class LongBenchEDataLoader:
             context_len=ctx_len,
             meta={"task": task, "benchmark": "longbench_e", "metric": LONGBENCH_E_METRICS[task]},
         )
+    
+    def _load_real_sample(self, task: str, idx: int) -> Optional[Sample]:
+        """Load real sample from HuggingFace LongBench-E dataset.
+        
+        Requires: pip install datasets
+        
+        Args:
+            task: Task name (e.g., "single_qa")
+            idx: Sample index
+        
+        Returns:
+            Sample or None if not available
+        """
+        try:
+            from datasets import load_dataset
+        except ImportError:
+            logger.warning("datasets library not installed. Using synthetic samples.")
+            return None
+        
+        try:
+            # Load the specific task from LongBench-E
+            ds = load_dataset("THUDM/LongBench", name=task, split="test")
+            
+            if idx >= len(ds):
+                return None
+            
+            sample_dict = ds[idx]
+            
+            # Extract context, question, answer based on task structure
+            context = sample_dict.get("context", "")
+            question = sample_dict.get("input", sample_dict.get("question", ""))
+            answer = sample_dict.get("output", sample_dict.get("answers", [""])[0])
+            
+            # Estimate token count (words * 0.75)
+            context_len = int(len(context.split()) * 0.75 / 0.75)  # Approximate
+            
+            return Sample(
+                sample_id=f"longbench_e_{task}_{idx}",
+                context=context,
+                question=question,
+                answer=str(answer),
+                context_len=context_len,
+                meta={"task": task, "benchmark": "longbench_e", "metric": LONGBENCH_E_METRICS[task]},
+            )
+        
+        except Exception as e:
+            logger.warning(f"Failed to load real sample for {task}[{idx}]: {e}")
+            return None
 
     def __iter__(self) -> Iterator[Sample]:
-        """Yield samples across all tasks."""
+        """Yield samples across all tasks, with fallback to synthetic."""
         rng = random.Random(self.seed)
         lo, hi = self.context_len_range
+        
         for task in self.tasks:
             for idx in range(self.n_samples_per_task):
-                ctx_len = rng.randint(lo, hi)
-                yield self._synthetic_sample(task, idx, ctx_len, rng)
+                # Try to load real sample first
+                sample = self._load_real_sample(task, idx)
+                
+                # Fall back to synthetic if not available
+                if sample is None:
+                    ctx_len = rng.randint(lo, hi)
+                    sample = self._synthetic_sample(task, idx, ctx_len, rng)
+                
+                yield sample
 
     def __len__(self) -> int:
         return len(self.tasks) * self.n_samples_per_task

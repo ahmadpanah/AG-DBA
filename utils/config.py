@@ -81,3 +81,58 @@ def _validate(cfg: dict[str, Any]) -> None:
     bit_widths = agdba.get("bit_widths", [])
     if bit_widths and not all(b in {1, 2, 3, 4} for b in bit_widths):
         raise ValueError(f"bit_widths must be subset of {{1,2,3,4}}, got {bit_widths}")
+
+
+# ============================================================================
+# Reproducibility
+# ============================================================================
+
+def set_reproducibility(seed: int = 42, deterministic: bool = True) -> None:
+    """Set seeds and deterministic behavior for reproducibility.
+    
+    Paper Section 4.1: "Fixed seeds, controlled RNG, reproducible data loading"
+    
+    Args:
+        seed: Random seed
+        deterministic: Whether to enable deterministic CUDA kernels
+    """
+    import random
+    import numpy as np
+    import torch
+    
+    # Python random
+    random.seed(seed)
+    
+    # NumPy
+    np.random.seed(seed)
+    
+    # PyTorch
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    # Deterministic behavior
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    logger.info(f"Set reproducibility seed={seed}, deterministic={deterministic}")
+
+
+def get_device(device_id: int = 0) -> str:
+    """Get device string.
+    
+    Args:
+        device_id: GPU device ID
+    
+    Returns:
+        device: "cuda:X" or "cpu"
+    """
+    import torch
+    
+    if torch.cuda.is_available():
+        return f"cuda:{device_id}"
+    else:
+        logger.warning("CUDA not available, using CPU (will be slow!)")
+        return "cpu"
