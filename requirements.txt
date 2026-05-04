@@ -1,0 +1,33 @@
+# AG-DBA Requirements
+# Paper hardware: NVIDIA A100 80GB, CUDA 13.2 (Section 4.1)
+# Python 3.10+
+
+# Core deep learning
+torch>=2.3.0
+torchvision>=0.18.0
+
+# HuggingFace ecosystem (Section 4.1: "built into HuggingFace transformers")
+transformers>=4.43.0
+accelerate>=0.31.0
+datasets>=2.20.0
+
+# Triton for custom CUDA kernels (Section 4.1)
+triton>=2.3.0
+
+# Scientific computing
+numpy>=1.26.0
+scipy>=1.13.0
+
+# Config / YAML parsing
+pyyaml>=6.0.1
+omegaconf>=2.3.0
+
+# Evaluation metrics
+rouge-score>=0.1.2
+
+# Testing
+pytest>=8.2.0
+pytest-cov>=5.0.0
+
+# Utilities
+tqdm>=4.66.0
